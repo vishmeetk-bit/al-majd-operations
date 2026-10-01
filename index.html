@@ -551,6 +551,48 @@ H4021D71981461
 
 </div>
 
+
+<div class="card section">
+<h3>High Usage and Low Usage Monitoring</h3>
+<p class="note">Prototype threshold: above +15% = High Use; -15% to +15% (inclusive) = Normal; below -15% = Low Use. Compare consumption for equivalent periods, not bill cost or cumulative meter readings.</p>
+<label for="utilityBaseline">Historical baseline</label>
+<select id="utilityBaseline">
+<option value="sep2025">Sep 2025</option>
+<option value="oct2025">Oct 2025</option>
+<option value="jun2026">Jun 2026</option>
+<option value="jul2026">Jul 2026</option>
+</select>
+<p>Enter current monthly consumption to compare with the selected baseline. These prototype inputs are not saved; AY26–27 official readings remain pending.</p>
+<div class="two">
+<div>
+<label for="electricityUsage">Current electricity consumption (kWh)</label>
+<input id="electricityUsage" type="number" min="0" step="any" placeholder="Enter monthly kWh">
+</div>
+<div>
+<label for="waterUsage">Current water consumption (units)</label>
+<input id="waterUsage" type="number" min="0" step="any" placeholder="Enter monthly water units">
+</div>
+</div>
+</div>
+<div class="two section" aria-live="polite" aria-atomic="true">
+<div class="card">
+<h3>Electricity Usage</h3>
+<span id="electricityStatus" class="pill blue">Awaiting reading</span>
+<p id="electricityVariance">Variance: —</p>
+<p id="electricityBaseline"></p>
+<h4>Investigation factors</h4>
+<ul id="electricityFactors"></ul>
+</div>
+<div class="card">
+<h3>Water Usage</h3>
+<span id="waterStatus" class="pill blue">Awaiting reading</span>
+<p id="waterVariance">Variance: —</p>
+<p id="waterBaseline"></p>
+<h4>Investigation factors</h4>
+<ul id="waterFactors"></ul>
+</div>
+</div>
+
 </section>
 
 <section id="hse" class="page">
@@ -1141,7 +1183,76 @@ URL.revokeObjectURL(link.href);
 
 renderOrders();
 
+const utilityBaselines = {
+ sep2025: {label:"Sep 2025", electricity:318992, water:3765},
+ oct2025: {label:"Oct 2025", electricity:210450, water:1953},
+ jun2026: {label:"Jun 2026", electricity:163201, water:4788},
+ jul2026: {label:"Jul 2026", electricity:149429, water:867}
+};
+
+function classifyUtilityUsage(raw, baseline){
+ if(String(raw).trim() === "") return {status:"Awaiting reading", color:"blue", variance:null};
+ const current = Number(raw);
+ if(!Number.isFinite(current) || current < 0) return {status:"Invalid reading", color:"amber", variance:null};
+ if(!Number.isFinite(baseline) || baseline <= 0) return {status:"Baseline unavailable", color:"amber", variance:null};
+ const variance = (current - baseline) / baseline * 100;
+ // Compare consumption directly so floating-point variance cannot shift an exact boundary.
+ const status = current > baseline * 115 / 100 ? "High Use"
+  : current < baseline * 85 / 100 ? "Low Use" : "Normal";
+ return {status, color:status === "High Use" ? "red" : status === "Low Use" ? "amber" : "green", variance};
+}
+
+const utilityInvestigationFactors = {
+ electricity:{
+  "High Use":["Check AC/chiller running hours, setpoints and cooling demand.","Review lights or equipment left on, additional occupancy and after-hours events."],
+  "Low Use":["Check school holidays, reduced occupancy and shorter operating hours.","Verify supply interruptions, inactive equipment and missing or estimated meter readings."],
+  "Normal":["Continue checking AC schedules, equipment use and meter readings."]
+ },
+ water:{
+  "High Use":["Inspect leaks, running taps/toilets, tank overflows and underground pipework.","Review irrigation, cleaning, tank filling and changes in occupancy."],
+  "Low Use":["Check holidays, reduced occupancy and irrigation or cleaning schedules.","Verify supply interruptions, closed valves and missing or estimated meter readings."],
+  "Normal":["Continue checking leaks, irrigation schedules and meter readings."]
+ }
+};
+
+function renderUtilityMonitoring(){
+ const baseline = utilityBaselines[document.getElementById("utilityBaseline").value];
+ ["electricity","water"].forEach(type => {
+  const input = document.getElementById(type + "Usage");
+  const result = classifyUtilityUsage(input.validity.badInput ? "invalid" : input.value, baseline[type]);
+  const status = document.getElementById(type + "Status");
+  status.textContent = result.status;
+  status.className = "pill " + result.color;
+  input.setAttribute("aria-invalid", result.status === "Invalid reading" ? "true" : "false");
+  const variance = result.variance;
+  // Retain extra precision near a threshold instead of displaying an alert as exactly 15%.
+  let displayed = variance === null ? "" : Math.abs(variance).toFixed(2);
+  if(variance !== null && Math.abs(variance) > 15 && displayed === "15.00") displayed = "15.00…";
+  document.getElementById(type + "Variance").textContent = variance === null
+   ? "Variance: —" : "Variance: " + (variance < 0 ? "−" : "+") + displayed + "%";
+  document.getElementById(type + "Baseline").textContent = "Baseline: " + baseline.label + " · "
+   + baseline[type].toLocaleString("en-US") + (type === "electricity" ? " kWh" : " units");
+  const factors = utilityInvestigationFactors[type][result.status] || [
+   result.status === "Invalid reading" ? "Enter a valid, non-negative consumption value." : "Enter current consumption to assess usage."
+  ];
+  const list = document.getElementById(type + "Factors");
+  list.replaceChildren();
+  [...factors, "Confirm comparable billing days, season, occupancy and meter units before drawing conclusions."].forEach(factor => {
+   const item = document.createElement("li");
+   item.textContent = factor;
+   list.appendChild(item);
+  });
+ });
+}
+
+document.getElementById("utilityBaseline").addEventListener("change", renderUtilityMonitoring);
+["electricityUsage","waterUsage"].forEach(id => {
+ document.getElementById(id).addEventListener("input", renderUtilityMonitoring);
+});
+renderUtilityMonitoring();
+
 </script>
 
 </body>
 </html>
+
